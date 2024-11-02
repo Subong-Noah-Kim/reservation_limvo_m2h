@@ -82,6 +82,8 @@ def init_session_state():
     """세션 상태 초기화"""
     if 'is_admin' not in st.session_state:
         st.session_state.is_admin = False
+    if 'show_login' not in st.session_state:    
+        st.session_state.show_login = False      
     if 'login_attempts' not in st.session_state:
         st.session_state.login_attempts = 0
     if 'selected_date' not in st.session_state:
@@ -708,6 +710,9 @@ def main():
     
     # CSS 스타일 추가
     st.markdown(MOBILE_CSS, unsafe_allow_html=True)
+
+    # 세션 상태 초기화 (반드시 먼저 실행)
+    init_session_state()
     
     # 화면 너비 감지를 위한 JavaScript 삽입
     st.markdown("""
@@ -718,9 +723,6 @@ def main():
             }
         </script>
         """, unsafe_allow_html=True)
-    
-    # 세션 상태 초기화
-    init_session_state()
     
     # 데이터베이스 및 가격 계산기 초기화
     db = Database()
