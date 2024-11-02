@@ -47,13 +47,13 @@ def show_calendar(db, selected_date, on_date_select):
     col1, col2, col3 = st.columns([1,3,1])
     
     with col1:
-        if st.button("◀"):
+        if st.button("◀", use_container_width=True):
             if "current_date" in st.session_state:
                 st.session_state.current_date = (st.session_state.current_date.replace(day=1) - timedelta(days=1)).replace(day=1)
     
     with col2:
         current_date = st.session_state.current_date
-        st.markdown(f"#### {current_date.year}년 {current_date.month}월")
+        st.markdown(f"<div style='text-align:center;'>#### {current_date.year}년 {current_date.month}월</div>", unsafe_allow_html=True)
     
     with col3:
         if st.button("▶"):
@@ -66,8 +66,9 @@ def show_calendar(db, selected_date, on_date_select):
     
     # 요일 헤더
     cols = st.columns(7)
-    for i, day in enumerate(['월', '화', '수', '목', '금', '토', '일']):
-        cols[i].markdown(f"<div style='text-align:center'><b>{day}</b></div>", unsafe_allow_html=True)
+    days = ['월', '화', '수', '목', '금', '토', '일']
+    for i, day in enumerate(days):
+        cols[i].markdown(f"<div style='text-align:center; font-size: 0.8em;'><b>{day}</b></div>", unsafe_allow_html=True)
     
     # 날짜 표시
     for week in calendar_data:
@@ -94,149 +95,166 @@ def show_calendar(db, selected_date, on_date_select):
                     cols[i].markdown(f"<div style='text-align:center; color:#F63366;'>{reservations}건</div>", unsafe_allow_html=True)
 
 def show_time_slots(db, selected_date, space):
-    """시간대별 예약 현황 표시 - 세로 버튼 형태"""
     st.markdown("#### 시간대별 예약 현황")
     
     time_slots = [f"{i:02d}:00-{i+1:02d}:00" for i in range(9, 22)]
     
-    for time in time_slots:
-        is_available = db.check_availability(
-            selected_date.strftime('%Y-%m-%d'),
-            time,
-            space
-        )
-        
-        # 버튼 스타일 정의
-        if is_available:
-            button_style = """
-                padding: 8px 16px;
-                background-color: #E8F0FE;
-                border-radius: 4px;
-                margin: 2px 0;
-                text-align: left;
-                color: #1f1f1f;
-                border: none;
-                width: 100%;
-                transition: background-color 0.3s;
-                cursor: pointer;
-                """
-            icon = "✅"
-        else:
-            button_style = """
-                padding: 8px 16px;
-                background-color: #FFE0E0;
-                border-radius: 4px;
-                margin: 2px 0;
-                text-align: left;
-                color: #666666;
-                border: none;
-                width: 100%;
-                cursor: not-allowed;
-                """
-            icon = "❌"
-        
+    # 2열로 나누기
+    col1, col2 = st.columns(2)
+    mid_point = len(time_slots) // 2
+    
+    def show_time_slot_button(time, is_available):
+        button_style = """
+            padding: 8px 16px;
+            background-color: {} ;
+            border-radius: 4px;
+            margin: 2px 0;
+            text-align: left;
+            color: {};
+            border: none;
+            width: 100%;
+            {}
+            """.format(
+                "#E8F0FE" if is_available else "#FFE0E0",
+                "#1f1f1f" if is_available else "#666666",
+                "cursor: pointer;" if is_available else "cursor: not-allowed;"
+            )
+        icon = "✅" if is_available else "❌"
         st.markdown(
-            f"""
-            <div style='{button_style}'>
-                <span style='display: inline-block; min-width: 24px;'>{icon}</span>
-                {time}
-            </div>
-            """,
+            f"<div style='{button_style}'><span style='display: inline-block; min-width: 24px;'>{icon}</span>{time}</div>",
             unsafe_allow_html=True
         )
+    
+    with col1:
+        for time in time_slots[:mid_point]:
+            is_available = db.check_availability(
+                selected_date.strftime('%Y-%m-%d'),
+                time,
+                space
+            )
+            show_time_slot_button(time, is_available)
+    
+    with col2:
+        for time in time_slots[mid_point:]:
+            is_available = db.check_availability(
+                selected_date.strftime('%Y-%m-%d'),
+                time,
+                space
+            )
+            show_time_slot_button(time, is_available)
 
 def show_reservation_form(db: Database, pc: PriceCalculator):
     """예약 폼 표시"""
     st.title("M2H & LIMVO 공간 예약 시스템")
     
-    col1, col2 = st.columns([2, 1])
+    # 모바일 여부 확인 (User-Agent로 확인)
+    is_mobile = False
+    if 'mobile' in st.experimental_get_query_params().get('view', [''])[0].lower():
+        is_mobile = True
     
-    with col1:
+    # 레이아웃 조정
+    if is_mobile:
+        # 모바일용 단일 컬럼 레이아웃
         show_calendar(
             db, 
             st.session_state.selected_date,
             lambda date: setattr(st.session_state, 'selected_date', date)
         )
-    
-    with col2:
-        # 예약 정보 입력
-        space = st.selectbox(
-            "공간 선택",
-            ["연습실A", "연습실B", "스튜디오"]
-        )
         
+        # 예약 폼 내용
+        space = st.selectbox("공간 선택", ["연습실A", "연습실B", "스튜디오"])
         st.markdown(f"**선택된 날짜: {st.session_state.selected_date.strftime('%Y-%m-%d')}**")
-        
-        # 예약 가능한 시간대 표시
         show_time_slots(db, st.session_state.selected_date, space)
-        
-        # 예약 가능한 시간대만 선택 가능하도록 필터링
-        available_times = []
-        for time in [f"{i:02d}:00-{i+1:02d}:00" for i in range(9, 22)]:
-            if db.check_availability(
-                st.session_state.selected_date.strftime('%Y-%m-%d'),
-                time,
-                space
-            ):
-                available_times.append(time)
-        
-        time_slots = st.multiselect("예약 시간 선택", available_times)
-        people = st.number_input("인원", min_value=1, max_value=10, value=1)
-        options = st.multiselect(
-            "추가 옵션",
-            ["음향장비", "조명장비", "악기대여"]
-        )
-        
-        # 가격 즉시 계산 및 표시
-        if space and time_slots:
-            price = pc.calculate(space, time_slots, people, options)
-            st.markdown(
-                f"""
-                <div style='
-                    padding: 16px;
-                    background-color: #E8F0FE;
-                    border-radius: 8px;
-                    margin: 16px 0;
-                    text-align: center;
-                    font-size: 18px;
-                    font-weight: bold;
-                '>
-                    예상 가격: {format_price(price)}
-                </div>
-                """,
-                unsafe_allow_html=True
+
+    else:
+        col1, col2 = st.columns([2, 1])
+    
+        with col1:
+            show_calendar(
+                db, 
+                st.session_state.selected_date,
+                lambda date: setattr(st.session_state, 'selected_date', date)
             )
         
-        # 예약 확정 섹션
-        if space and time_slots:
-            with st.form("reservation_form", clear_on_submit=True):
-                st.markdown("#### 예약자 정보")
-                name = st.text_input("예약자 이름")
-                contact = st.text_input("연락처")
-                
-                submit = st.form_submit_button("예약하기")
-                
-                if submit:
-                    if not name or not contact:
-                        st.error("예약자 정보를 입력해주세요.")
-                    else:
-                        try:
-                            for time in time_slots:
-                                db.add_reservation({
-                                    'date': st.session_state.selected_date.strftime('%Y-%m-%d'),
-                                    'time': time,
-                                    'space': space,
-                                    'people': people,
-                                    'options': ','.join(options),
-                                    'price': price // len(time_slots),
-                                    'name': name,
-                                    'contact': contact
-                                })
-                            st.success("예약이 완료되었습니다!")
-                            st.balloons()
-                        except Exception as e:
-                            st.error("예약 처리 중 오류가 발생했습니다.")
-                            print(f"Error: {e}")
+        with col2:
+            # 예약 정보 입력
+            space = st.selectbox(
+                "공간 선택",
+                ["연습실A", "연습실B", "스튜디오"]
+            )
+            
+            st.markdown(f"**선택된 날짜: {st.session_state.selected_date.strftime('%Y-%m-%d')}**")
+            
+            # 예약 가능한 시간대 표시
+            show_time_slots(db, st.session_state.selected_date, space)
+            
+            # 예약 가능한 시간대만 선택 가능하도록 필터링
+            available_times = []
+            for time in [f"{i:02d}:00-{i+1:02d}:00" for i in range(9, 22)]:
+                if db.check_availability(
+                    st.session_state.selected_date.strftime('%Y-%m-%d'),
+                    time,
+                    space
+                ):
+                    available_times.append(time)
+            
+            time_slots = st.multiselect("예약 시간 선택", available_times)
+            people = st.number_input("인원", min_value=1, max_value=10, value=1)
+            options = st.multiselect(
+                "추가 옵션",
+                ["음향장비", "조명장비", "악기대여"]
+            )
+            
+            # 가격 즉시 계산 및 표시
+            if space and time_slots:
+                price = pc.calculate(space, time_slots, people, options)
+                st.markdown(
+                    f"""
+                    <div style='
+                        padding: 16px;
+                        background-color: #E8F0FE;
+                        border-radius: 8px;
+                        margin: 16px 0;
+                        text-align: center;
+                        font-size: 18px;
+                        font-weight: bold;
+                    '>
+                        예상 가격: {format_price(price)}
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+            
+            # 예약 확정 섹션
+            if space and time_slots:
+                with st.form("reservation_form", clear_on_submit=True):
+                    st.markdown("#### 예약자 정보")
+                    name = st.text_input("예약자 이름")
+                    contact = st.text_input("연락처")
+                    
+                    submit = st.form_submit_button("예약하기")
+                    
+                    if submit:
+                        if not name or not contact:
+                            st.error("예약자 정보를 입력해주세요.")
+                        else:
+                            try:
+                                for time in time_slots:
+                                    db.add_reservation({
+                                        'date': st.session_state.selected_date.strftime('%Y-%m-%d'),
+                                        'time': time,
+                                        'space': space,
+                                        'people': people,
+                                        'options': ','.join(options),
+                                        'price': price // len(time_slots),
+                                        'name': name,
+                                        'contact': contact
+                                    })
+                                st.success("예약이 완료되었습니다!")
+                                st.balloons()
+                            except Exception as e:
+                                st.error("예약 처리 중 오류가 발생했습니다.")
+                                print(f"Error: {e}")
 
 def show_admin_dashboard(db: Database):
     """관리자 대시보드 표시"""
@@ -308,15 +326,25 @@ def show_admin_dashboard(db: Database):
     # 통계 탭
     with tab3:
         if not db.get_all_reservations().empty:
-            # 기간 선택
-            col1, col2 = st.columns(2)
-            with col1:
+            # 모바일 여부 확인
+            is_mobile = 'mobile' in st.experimental_get_query_params().get('view', [''])[0].lower()
+            
+            # 기간 선택 UI - 모바일에서는 세로로 배치
+            if is_mobile:
                 start_date = st.date_input(
                     "시작일",
                     value=datetime.now().date() - timedelta(days=30)
                 )
-            with col2:
                 end_date = st.date_input("종료일", value=datetime.now().date())
+            else:
+                col1, col2 = st.columns(2)
+                with col1:
+                    start_date = st.date_input(
+                        "시작일",
+                        value=datetime.now().date() - timedelta(days=30)
+                    )
+                with col2:
+                    end_date = st.date_input("종료일", value=datetime.now().date())
             
             # 통계 계산
             reservations = db.get_all_reservations()
@@ -327,25 +355,38 @@ def show_admin_dashboard(db: Database):
             ]
             
             if not filtered.empty:
-                col1, col2, col3 = st.columns(3)
-                # 전체 통계
+                # 전체 통계 표시 - 모바일에서는 세로로 배치
                 total_revenue = filtered['price'].sum()
                 total_count = len(filtered)
                 avg_price = total_revenue / total_count if total_count > 0 else 0
                 
-                col1.metric("총 매출", format_price(total_revenue))
-                col2.metric("총 예약 수", total_count)
-                col3.metric("평균 예약 가격", format_price(avg_price))
-                
-                # 공간별 통계
-                st.markdown("#### 공간별 통계")
-                space_stats = filtered.groupby('space').agg({
-                    'id': 'count',
-                    'price': 'sum'
-                }).rename(columns={'id': '예약 수', 'price': '매출'})
-                st.dataframe(space_stats)
-            else:
-                st.info("선택한 기간에 예약 데이터가 없습니다.")
+                if is_mobile:
+                    # 모바일에서는 세로로 나열
+                    st.metric("총 매출", format_price(total_revenue))
+                    st.metric("총 예약 수", total_count)
+                    st.metric("평균 예약 가격", format_price(avg_price))
+                    
+                    # 공간별 통계도 전체 너비로 표시
+                    st.markdown("#### 공간별 통계")
+                    space_stats = filtered.groupby('space').agg({
+                        'id': 'count',
+                        'price': 'sum'
+                    }).rename(columns={'id': '예약 수', 'price': '매출'})
+                    st.dataframe(space_stats, use_container_width=True)
+                else:
+                    # PC에서는 3열로 표시
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("총 매출", format_price(total_revenue))
+                    col2.metric("총 예약 수", total_count)
+                    col3.metric("평균 예약 가격", format_price(avg_price))
+                    
+                    # 공간별 통계
+                    st.markdown("#### 공간별 통계")
+                    space_stats = filtered.groupby('space').agg({
+                        'id': 'count',
+                        'price': 'sum'
+                    }).rename(columns={'id': '예약 수', 'price': '매출'})
+                    st.dataframe(space_stats)
 
         # 가격 설정 탭
     with tab4:
@@ -497,6 +538,29 @@ def main():
         layout="wide"
     )
     
+    # CSS 스타일 추가 (set_page_config 바로 후에)
+    st.markdown("""
+    <style>
+        @media (max-width: 768px) {
+            .stButton button {
+                width: 100%;
+                padding: 0.5rem;
+                font-size: 0.9rem;
+            }
+            
+            .calendar-day {
+                font-size: 0.8rem;
+                padding: 0.3rem;
+            }
+            
+            .block-container {
+                padding-top: 1rem;
+                padding-bottom: 1rem;
+            }
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
     # 세션 상태 초기화
     if 'show_login' not in st.session_state:
         st.session_state.show_login = False
