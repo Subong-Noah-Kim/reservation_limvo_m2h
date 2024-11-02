@@ -4,6 +4,8 @@ import sqlite3
 import pandas as pd
 from pathlib import Path
 import streamlit as st
+import json
+
 
 class Database:
     def __init__(self):
@@ -161,5 +163,52 @@ class Database:
                 available_times.append(time)
         
         return available_times
+    
+    def get_price_settings(self):
+        """가격 설정 조회"""
+        conn = self.get_connection()
+        c = conn.cursor()
+        
+        # price_settings 테이블이 없으면 생성
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS price_settings (
+                id INTEGER PRIMARY KEY,
+                settings TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # 최신 설정 조회
+        c.execute('SELECT settings FROM price_settings ORDER BY updated_at DESC LIMIT 1')
+        result = c.fetchone()
+        
+        conn.close()
+        
+        if result:
+            return json.loads(result[0])
+        return None
+    
+    def update_price_settings(self, settings):
+        """가격 설정 업데이트"""
+        conn = self.get_connection()
+        c = conn.cursor()
+        
+        # price_settings 테이블이 없으면 생성
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS price_settings (
+                id INTEGER PRIMARY KEY,
+                settings TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # 새로운 설정 저장
+        c.execute(
+            'INSERT INTO price_settings (settings) VALUES (?)',
+            (json.dumps(settings),)
+        )
+        
+        conn.commit()
+        conn.close()
     
     

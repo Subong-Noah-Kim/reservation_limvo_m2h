@@ -147,7 +147,7 @@ def show_time_slots(db, selected_date, space):
 
 def show_reservation_form(db: Database, pc: PriceCalculator):
     """예약 폼 표시"""
-    st.title("공간 예약 시스템")
+    st.title("M2H & LIMVO 공간 예약 시스템")
     
     col1, col2 = st.columns([2, 1])
     
@@ -242,7 +242,10 @@ def show_admin_dashboard(db: Database):
     """관리자 대시보드 표시"""
     st.title("관리자 대시보드")
     
-    tab1, tab2, tab3 = st.tabs(["예약 현황", "시간 차단", "통계"])
+    # 탭에 가격 설정 추가
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "예약 현황", "시간 차단", "통계", "가격 설정"
+    ])
     
     # 예약 현황 탭
     with tab1:
@@ -344,6 +347,123 @@ def show_admin_dashboard(db: Database):
             else:
                 st.info("선택한 기간에 예약 데이터가 없습니다.")
 
+        # 가격 설정 탭
+    with tab4:
+        show_price_settings(db, PriceCalculator())
+
+def show_price_settings(db: Database, pc: PriceCalculator):
+    """가격 설정 관리 화면"""
+    st.markdown("### 가격 설정")
+    
+    # 기본 가격 설정
+    st.markdown("#### 공간별 기본 가격 (시간당)")
+    base_prices_cols = st.columns(3)
+    
+    updated_base_prices = {}
+    for idx, (space, price) in enumerate(pc.base_prices.items()):
+        with base_prices_cols[idx]:
+            updated_base_prices[space] = st.number_input(
+                space,
+                min_value=0,
+                value=price,
+                step=1000,
+                key=f"base_price_{space}"
+            )
+    
+    # 추가 인원 요금 설정
+    st.markdown("#### 추가 인원 요금")
+    col1, col2 = st.columns(2)
+    with col1:
+        base_people = st.number_input(
+            "기본 인원 (명)",
+            min_value=1,
+            value=4,
+            key="base_people"
+        )
+    with col2:
+        people_extra_fee = st.number_input(
+            "1인당 추가 요금",
+            min_value=0,
+            value=pc.people_extra_fee,
+            step=1000,
+            key="people_extra_fee"
+        )
+    
+    # 옵션 요금 설정
+    st.markdown("#### 옵션별 추가 요금")
+    option_prices_cols = st.columns(3)
+    
+    updated_option_prices = {}
+    for idx, (option, price) in enumerate(pc.option_prices.items()):
+        with option_prices_cols[idx]:
+            updated_option_prices[option] = st.number_input(
+                option,
+                min_value=0,
+                value=price,
+                step=1000,
+                key=f"option_price_{option}"
+            )
+    
+    # 가격 시뮬레이션
+    st.markdown("#### 가격 시뮬레이션")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        sim_space = st.selectbox("공간 선택", list(updated_base_prices.keys()))
+        sim_hours = st.number_input("사용 시간", min_value=1, value=1)
+        sim_people = st.number_input("인원", min_value=1, value=1)
+    
+    with col2:
+        sim_options = st.multiselect(
+            "추가 옵션",
+            list(updated_option_prices.keys())
+        )
+    
+    # 가격 계산
+    base_price = updated_base_prices[sim_space] * sim_hours
+    people_fee = max(0, (sim_people - base_people)) * people_extra_fee
+    option_fee = sum(updated_option_prices[opt] for opt in sim_options)
+    total_price = base_price + people_fee + option_fee
+    
+    # 가격 명세 표시
+    st.markdown("#### 가격 명세")
+    price_details = f"""
+    | 항목 | 금액 |
+    |------|------|
+    | 기본 요금 ({sim_hours}시간) | {format_price(base_price)} |
+    | 추가 인원 요금 | {format_price(people_fee)} |
+    | 옵션 요금 | {format_price(option_fee)} |
+    | **총 가격** | **{format_price(total_price)}** |
+    """
+    st.markdown(price_details)
+    
+    # 설정 저장
+    if st.button("가격 설정 저장", type="primary"):
+        try:
+            # 설정을 파일이나 데이터베이스에 저장
+            price_settings = {
+                'base_prices': updated_base_prices,
+                'base_people': base_people,
+                'people_extra_fee': people_extra_fee,
+                'option_prices': updated_option_prices
+            }
+            # price_settings를 JSON 형태로 저장
+            db.update_price_settings(price_settings)
+            
+            # PriceCalculator 업데이트
+            pc.base_prices = updated_base_prices
+            pc.people_extra_fee = people_extra_fee
+            pc.option_prices = updated_option_prices
+            
+            st.success("가격 설정이 저장되었습니다.")
+            
+            # 캐시 초기화
+            st.cache_data.clear()
+            
+        except Exception as e:
+            st.error(f"저장 중 오류가 발생했습니다: {str(e)}")
+
+
 def show_admin_login():
     """관리자 로그인 모달"""
     if st.session_state.show_login:
@@ -372,7 +492,7 @@ def show_admin_login():
 def main():
     """메인 애플리케이션"""
     st.set_page_config(
-        page_title="공간 예약 시스템",
+        page_title="M2H & LIMVO 공간 예약 시스템",
         page_icon="🏢",
         layout="wide"
     )
