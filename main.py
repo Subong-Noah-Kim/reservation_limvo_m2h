@@ -94,27 +94,54 @@ def show_calendar(db, selected_date, on_date_select):
                     cols[i].markdown(f"<div style='text-align:center; color:#F63366;'>{reservations}건</div>", unsafe_allow_html=True)
 
 def show_time_slots(db, selected_date, space):
-    """시간대별 예약 현황 표시"""
-    time_slots = [f"{i:02d}:00-{i+1:02d}:00" for i in range(9, 22)]
-    
+    """시간대별 예약 현황 표시 - 세로 버튼 형태"""
     st.markdown("#### 시간대별 예약 현황")
     
-    # 4열 그리드로 시간대 표시
-    cols = st.columns(4)
-    for idx, time in enumerate(time_slots):
-        col_idx = idx % 4
+    time_slots = [f"{i:02d}:00-{i+1:02d}:00" for i in range(9, 22)]
+    
+    for time in time_slots:
         is_available = db.check_availability(
             selected_date.strftime('%Y-%m-%d'),
             time,
             space
         )
         
-        style = "background-color:#E8F0FE;" if is_available else "background-color:#FFE0E0;"
-        icon = "✅" if is_available else "❌"
+        # 버튼 스타일 정의
+        if is_available:
+            button_style = """
+                padding: 8px 16px;
+                background-color: #E8F0FE;
+                border-radius: 4px;
+                margin: 2px 0;
+                text-align: left;
+                color: #1f1f1f;
+                border: none;
+                width: 100%;
+                transition: background-color 0.3s;
+                cursor: pointer;
+                """
+            icon = "✅"
+        else:
+            button_style = """
+                padding: 8px 16px;
+                background-color: #FFE0E0;
+                border-radius: 4px;
+                margin: 2px 0;
+                text-align: left;
+                color: #666666;
+                border: none;
+                width: 100%;
+                cursor: not-allowed;
+                """
+            icon = "❌"
         
-        cols[col_idx].markdown(
-            f"<div style='padding:8px; {style} border-radius:5px; margin:2px 0; text-align:center'>"
-            f"{icon} {time}</div>",
+        st.markdown(
+            f"""
+            <div style='{button_style}'>
+                <span style='display: inline-block; min-width: 24px;'>{icon}</span>
+                {time}
+            </div>
+            """,
             unsafe_allow_html=True
         )
 
@@ -122,7 +149,6 @@ def show_reservation_form(db: Database, pc: PriceCalculator):
     """예약 폼 표시"""
     st.title("공간 예약 시스템")
     
-    # 2단 레이아웃
     col1, col2 = st.columns([2, 1])
     
     with col1:
@@ -133,70 +159,84 @@ def show_reservation_form(db: Database, pc: PriceCalculator):
         )
     
     with col2:
-        with st.form("reservation_form", clear_on_submit=True):
-            space = st.selectbox(
-                "공간 선택",
-                ["연습실A", "연습실B", "스튜디오"]
+        # 예약 정보 입력
+        space = st.selectbox(
+            "공간 선택",
+            ["연습실A", "연습실B", "스튜디오"]
+        )
+        
+        st.markdown(f"**선택된 날짜: {st.session_state.selected_date.strftime('%Y-%m-%d')}**")
+        
+        # 예약 가능한 시간대 표시
+        show_time_slots(db, st.session_state.selected_date, space)
+        
+        # 예약 가능한 시간대만 선택 가능하도록 필터링
+        available_times = []
+        for time in [f"{i:02d}:00-{i+1:02d}:00" for i in range(9, 22)]:
+            if db.check_availability(
+                st.session_state.selected_date.strftime('%Y-%m-%d'),
+                time,
+                space
+            ):
+                available_times.append(time)
+        
+        time_slots = st.multiselect("예약 시간 선택", available_times)
+        people = st.number_input("인원", min_value=1, max_value=10, value=1)
+        options = st.multiselect(
+            "추가 옵션",
+            ["음향장비", "조명장비", "악기대여"]
+        )
+        
+        # 가격 즉시 계산 및 표시
+        if space and time_slots:
+            price = pc.calculate(space, time_slots, people, options)
+            st.markdown(
+                f"""
+                <div style='
+                    padding: 16px;
+                    background-color: #E8F0FE;
+                    border-radius: 8px;
+                    margin: 16px 0;
+                    text-align: center;
+                    font-size: 18px;
+                    font-weight: bold;
+                '>
+                    예상 가격: {format_price(price)}
+                </div>
+                """,
+                unsafe_allow_html=True
             )
-            
-            st.markdown(f"**선택된 날짜: {st.session_state.selected_date.strftime('%Y-%m-%d')}**")
-            
-            # 예약 가능한 시간대 표시
-            show_time_slots(db, st.session_state.selected_date, space)
-            
-            # 예약 가능한 시간대만 선택 가능하도록 필터링
-            available_times = []
-            for time in [f"{i:02d}:00-{i+1:02d}:00" for i in range(9, 22)]:
-                if db.check_availability(
-                    st.session_state.selected_date.strftime('%Y-%m-%d'),
-                    time,
-                    space
-                ):
-                    available_times.append(time)
-            
-            time_slots = st.multiselect("예약 시간 선택", available_times)
-            people = st.number_input("인원", min_value=1, max_value=10, value=1)
-            options = st.multiselect(
-                "추가 옵션",
-                ["음향장비", "조명장비", "악기대여"]
-            )
-            
-            # 예약자 정보
-            name = st.text_input("예약자 이름")
-            contact = st.text_input("연락처")
-            
-            # 가격 계산 및 표시
-            if time_slots:
-                price = pc.calculate(space, time_slots, people, options)
-                st.info(f"예상 가격: {format_price(price)}")
-            
-            # 예약 버튼
-            submit = st.form_submit_button("예약하기")
-            
-            if submit:
-                if not time_slots:
-                    st.error("예약 시간을 선택해주세요.")
-                elif not name or not contact:
-                    st.error("예약자 정보를 입력해주세요.")
-                else:
-                    try:
-                        # 예약 처리
-                        for time in time_slots:
-                            db.add_reservation({
-                                'date': st.session_state.selected_date.strftime('%Y-%m-%d'),
-                                'time': time,
-                                'space': space,
-                                'people': people,
-                                'options': ','.join(options),
-                                'price': price // len(time_slots),
-                                'name': name,
-                                'contact': contact
-                            })
-                        st.success("예약이 완료되었습니다!")
-                        st.balloons()
-                    except Exception as e:
-                        st.error("예약 처리 중 오류가 발생했습니다.")
-                        print(f"Error: {e}")
+        
+        # 예약 확정 섹션
+        if space and time_slots:
+            with st.form("reservation_form", clear_on_submit=True):
+                st.markdown("#### 예약자 정보")
+                name = st.text_input("예약자 이름")
+                contact = st.text_input("연락처")
+                
+                submit = st.form_submit_button("예약하기")
+                
+                if submit:
+                    if not name or not contact:
+                        st.error("예약자 정보를 입력해주세요.")
+                    else:
+                        try:
+                            for time in time_slots:
+                                db.add_reservation({
+                                    'date': st.session_state.selected_date.strftime('%Y-%m-%d'),
+                                    'time': time,
+                                    'space': space,
+                                    'people': people,
+                                    'options': ','.join(options),
+                                    'price': price // len(time_slots),
+                                    'name': name,
+                                    'contact': contact
+                                })
+                            st.success("예약이 완료되었습니다!")
+                            st.balloons()
+                        except Exception as e:
+                            st.error("예약 처리 중 오류가 발생했습니다.")
+                            print(f"Error: {e}")
 
 def show_admin_dashboard(db: Database):
     """관리자 대시보드 표시"""
@@ -304,43 +344,33 @@ def show_admin_dashboard(db: Database):
             else:
                 st.info("선택한 기간에 예약 데이터가 없습니다.")
 
-def main():
-    st.set_page_config(
-        page_title="공간 예약 시스템",
-        page_icon="🏢",
-        layout="wide"
-    )
-    
-    # 세션 상태 초기화
-    init_session_state()
-    
-    # 데이터베이스 및 가격 계산기 초기화
-    db = Database()
-    pc = PriceCalculator()
-    
-    # 관리자 로그인 사이드바
-    with st.sidebar:
-        if not st.session_state.is_admin:
-            st.subheader("관리자 로그인")
+def show_admin_login():
+    """관리자 로그인 모달"""
+    if st.session_state.show_login:
+        with st.sidebar:
+            st.markdown("### 관리자 로그인")
             with st.form("login_form"):
                 password = st.text_input("비밀번호", type="password")
-                if st.form_submit_button("로그인"):
-                    if check_password(password):
-                        st.session_state.is_admin = True
-                        st.success("로그인 성공!")
+                col1, col2 = st.columns([1,1])
+                with col1:
+                    if st.form_submit_button("로그인"):
+                        if check_password(password):
+                            st.session_state.is_admin = True
+                            st.session_state.show_login = False
+                            st.success("로그인 성공!")
+                            st.rerun()
+                        else:
+                            st.session_state.login_attempts += 1
+                            st.error("비밀번호가 일치하지 않습니다.")
+                            if st.session_state.login_attempts >= 5:
+                                st.error("로그인 시도 횟수를 초과했습니다.")
+                with col2:
+                    if st.form_submit_button("취소"):
+                        st.session_state.show_login = False
                         st.rerun()
-                    else:
-                        st.session_state.login_attempts += 1
-                        st.error("비밀번호가 일치하지 않습니다.")
-                        if st.session_state.login_attempts >= 5:
-                            st.error("로그인 시도 횟수를 초과했습니다.")
-        else:
-            st.success("관리자로 로그인됨")
-            if st.button("로그아웃"):
-                st.session_state.is_admin = False
-                st.session_state.login_attempts = 0
 
 def main():
+    """메인 애플리케이션"""
     st.set_page_config(
         page_title="공간 예약 시스템",
         page_icon="🏢",
@@ -348,34 +378,37 @@ def main():
     )
     
     # 세션 상태 초기화
-    init_session_state()
+    if 'show_login' not in st.session_state:
+        st.session_state.show_login = False
+    if 'is_admin' not in st.session_state:
+        st.session_state.is_admin = False
+    if 'login_attempts' not in st.session_state:
+        st.session_state.login_attempts = 0
+    if 'selected_date' not in st.session_state:
+        st.session_state.selected_date = datetime.now().date()
+    if 'current_date' not in st.session_state:
+        st.session_state.current_date = datetime.now().date()
     
     # 데이터베이스 및 가격 계산기 초기화
     db = Database()
     pc = PriceCalculator()
     
-    # 관리자 로그인 사이드바
-    with st.sidebar:
-        if not st.session_state.is_admin:
-            st.subheader("관리자 로그인")
-            with st.form("login_form"):
-                password = st.text_input("비밀번호", type="password")
-                if st.form_submit_button("로그인"):
-                    if check_password(password):
-                        st.session_state.is_admin = True
-                        st.success("로그인 성공!")
-                        st.rerun()
-                    else:
-                        st.session_state.login_attempts += 1
-                        st.error("비밀번호가 일치하지 않습니다.")
-                        if st.session_state.login_attempts >= 5:
-                            st.error("로그인 시도 횟수를 초과했습니다.")
-        else:
-            st.success("관리자로 로그인됨")
-            if st.button("로그아웃"):
+    # 우측 상단 관리자 버튼
+    col1, col2 = st.columns([20, 1])
+    with col2:
+        if st.session_state.is_admin:
+            if st.button("🔓", help="로그아웃"):
                 st.session_state.is_admin = False
                 st.session_state.login_attempts = 0
                 st.rerun()
+        else:
+            if st.button("🔐", help="관리자 로그인"):
+                st.session_state.show_login = True
+                st.rerun()
+    
+    # 관리자 로그인 모달 표시
+    if st.session_state.show_login:
+        show_admin_login()
     
     # 메인 컨텐츠
     if st.session_state.is_admin:
